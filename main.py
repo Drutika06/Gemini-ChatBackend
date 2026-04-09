@@ -106,11 +106,22 @@ app = FastAPI(title="Gemini AI Backend API")
 # 2. Add CORS Middleware (Crucial for connecting a frontend UI later!)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=[
+        "http://localhost:3000",           # Local development
+        "http://localhost:8000",           # Local FastAPI dev
+        "http://127.0.0.1:3000",           # Local development (IP)
+        "https://gemini-chat-79771110644.us-central1.run.app",  # Your Cloud Run domain
+        "https://gemini-chat-gold.vercel.app",  # Your primary Vercel frontend
+        "https://gemini-chat-98m2obx2t-drutika06s-projects.vercel.app", # <--- ADDED THIS LINE!
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["*"], # Simplified to allow all methods
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
+
+
 
 # 3. Initialize the AI brain 
 chat_session = initialize_chat()
@@ -137,6 +148,10 @@ def health_check():
         "status": "Online",
         "message": "Welcome to the Gemini API Backend. Send a POST request to /chat to talk to the AI."
     }
+
+@app.options("/chat")
+def options_chat():
+    return {"message": "OK"}
 
 @app.post("/chat", response_model=ChatResponse)
 def chat_with_gemini(request: ChatRequest):
