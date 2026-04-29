@@ -69,15 +69,42 @@ def build_embedding_index(chunks: list[dict]) -> tuple[np.ndarray, list[str]]:
     return embeddings, chunk_texts
 
 
+# ── Query Complexity Detection ──
+def estimate_query_complexity(query: str) -> int:
+    """Estimate query complexity and return adaptive top_k.
+    
+    - Simple queries (1-3 words): top_k=2
+    - Medium queries (4-8 words, 1 question): top_k=4
+    - Complex queries (9+ words, multiple questions): top_k=5
+    """
+    word_count = len(query.split())
+    question_count = query.count('?')
+    
+    complexity_score = word_count + (question_count * 2)
+    
+    if complexity_score < 4:
+        return 2
+    elif complexity_score < 10:
+        return 4
+    else:
+        return 5
+
+
 # ── Retrieval ──
 def retrieve(
     query: str,
     embeddings: np.ndarray,
     chunk_texts: list[str],
     chunks: list[dict],
-    top_k: int = 3
+    top_k: int = None
 ) -> list[tuple[float, str, dict]]:
-    """Retrieve top-k chunks using cosine similarity."""
+    """Retrieve top-k chunks using cosine similarity.
+    
+    If top_k is None, it's estimated adaptively based on query complexity.
+    """
+    if top_k is None:
+        top_k = estimate_query_complexity(query)
+    
     query_emb = get_embedding(query, task="retrieval_query")
     
     # Cosine similarity
@@ -99,7 +126,7 @@ def rewrite_query(user_query: str, chat_history: list[dict]) -> str:
         return user_query
 
     history_str = "\n".join(
-        f"{'User' if turn['role'] == 'user' else 'AI'}: {turn['content'][:200]}"
+        f"{'User' if turn['role'] == 'user' else 'AI'}: {turn['content']}"
         for turn in chat_history[-6:]  # Last 3 exchanges
     )
 
@@ -132,8 +159,8 @@ def ask(
     # Step 1: Rewrite query for better retrieval
     rewritten = rewrite_query(question, chat_history)
 
-    # Step 2: Retrieve with rewritten query
-    results = retrieve(rewritten, embeddings, chunk_texts, chunks, top_k=3)
+    # Step 2: Retrieve with rewritten query (adaptive top_k based on complexity)
+    results = retrieve(rewritten, embeddings, chunk_texts, chunks)
     context_str = "\n\n".join(
         f"[Similarity: {s:.3f}]\n{c}"
         for s, c, _ in results
@@ -144,15 +171,21 @@ def ask(
     if chat_history:
         recent = chat_history[-6:]  # Last 3 exchanges
         history_str = "RECENT CONVERSATION:\n" + "\n".join(
-            f"{'User' if t['role'] == 'user' else 'AI'}: {t['content'][:150]}..."
+            f"{'User' if t['role'] == 'user' else 'AI'}: {t['content']}"
             for t in recent
         ) + "\n\n"
 
     prompt = f"""You are an MBSR (Mindfulness-Based Stress Reduction) expert 
 answering questions about the MBSR Handbook and mindfulness practices.
-Use the provided context from the knowledge base to give accurate, helpful answers.
-If the context doesn't contain relevant information, say so and provide what general 
-knowledge you have about the topic.
+
+IMPORTANT GUIDELINES:
+1. Ground all answers in the provided context - cite specific passages when possible.
+2. Capture both STRUCTURE and ESSENCE:
+   - Structure: Steps, sequences, mechanics (e.g., "start with left foot, move upward")
+   - Essence: Experiential insights, philosophical depth, awareness goals (e.g., "dissolving subject-object separation")
+3. Be COMPLETE: If context mentions multiple aspects (e.g., body parts, emotional/philosophical insights), include all of them.
+4. Preserve the TONE and SPIRIT of MBSR: Mindfulness is not just technique—it's a way of being.
+5. If context doesn't contain relevant information, say so and avoid speculation.
 
 {history_str}RETRIEVED CONTEXT:
 {context_str}

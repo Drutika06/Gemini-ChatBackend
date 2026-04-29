@@ -1,3 +1,5 @@
+First question: what is bodyscan meditation
+
 given The Body Scan Meditation "The body scan has proven to be an extremely powerful and healing
 form of meditation. It forms the core of the lying down practices that
 people train in Mindfulness-Based Stress Reduction. It involves
