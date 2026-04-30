@@ -50,4 +50,4 @@ Before running this application, you must configure your Python environment and 
   * [OpenWeatherMap](https://openweathermap.org/api) (for live weather data)
   * [NewsData.io](https://newsdata.io/) (for live news headlines)
 
-RSMiddleware configured to allow_origins=["*"]. This is what allows your React application (running on a different port) or even a mobile app to talk to this server without being blocked by the browser's security policies.
+
