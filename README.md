@@ -24,6 +24,20 @@ This repo also includes two distinct Python-based web interfaces (**Streamlit** 
 This repository contains two integrated Python UI implementations that connect seamlessly to the FastAPI backend:
 1. **Streamlit UI (`frontend.py`):** A sophisticated interface demonstrating session state management, chat memory, KPIs (`st.metric`), and complex layouts.
 2. **Gradio UI (`gradio_ui.py`):** A clean, modern chat interface showcasing how rapidly machine learning models can be deployed using the industry-standard Gradio framework.
+   
+## ⚙️ Installation & Setup
+
+Before running this application, you must configure your Python environment and API keys.
+
+### 1. Prerequisites
+
+* **Python:** Version 3.8 or higher installed on your machine.
+* **APIs Used (Keys Required):** You will need to sign up for free API keys from the following services:
+  * [Google AI Studio](https://aistudio.google.com/) (for the Gemini LLM)
+  * [OpenWeatherMap](https://openweathermap.org/api) (for live weather data)
+  * [NewsData.io](https://newsdata.io/) (for live news headlines)
+
+   
 
 ---
 
@@ -37,17 +51,5 @@ gemini-cli-chat/
 ├── gradio_ui.py         # The Gradio web interface
 ├── requirements.txt     # Python dependencies
 └── .env                 # API Keys (Not tracked in git)
-
-## ⚙️ Installation & Setup
-
-Before running this application, you must configure your Python environment and API keys.
-
-### 1. Prerequisites
-
-* **Python:** Version 3.8 or higher installed on your machine.
-* **APIs Used (Keys Required):** You will need to sign up for free API keys from the following services:
-  * [Google AI Studio](https://aistudio.google.com/) (for the Gemini LLM)
-  * [OpenWeatherMap](https://openweathermap.org/api) (for live weather data)
-  * [NewsData.io](https://newsdata.io/) (for live news headlines)
 
 
