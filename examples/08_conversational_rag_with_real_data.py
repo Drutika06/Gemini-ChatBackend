@@ -25,7 +25,7 @@ import google.generativeai as genai
 
 load_dotenv(override=True)
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
+model = genai.GenerativeModel("gemini-2.5-flash")  # Updated to use latest available model
 
 
 # ── Load MBSR chunks from JSONL ──
