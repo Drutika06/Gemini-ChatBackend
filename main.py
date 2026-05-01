@@ -188,10 +188,15 @@ REWRITTEN QUERY (just the query, nothing else):"""
 
 def ask_with_rag(question: str, history: list[dict]) -> str:
     """RAG flow: rewrite query, retrieve from Pinecone, then answer with Gemini."""
+    print(f"[RAG] Incoming question: {question!r}")
     rewritten = rewrite_query(question, history)
+    if rewritten != question:
+        print(f"[RAG] Query rewritten to: {rewritten!r}")
     hits = retrieve_from_pinecone(rewritten)
+    print(f"[RAG] Pinecone returned {len(hits)} chunk(s)")
 
     if not hits:
+        print("[RAG] No hits found — skipping generation")
         return "I could not find relevant context in the Pinecone knowledge base for that question."
 
     context_str = "\n\n".join(
@@ -224,6 +229,7 @@ CURRENT QUESTION: {question}
 ANSWER:"""
 
     response = rag_model.generate_content(prompt)
+    print(f"[RAG] Response generated ({len(response.text or '')} chars)")
     return response.text or "I could not generate an answer right now. Please try again."
 
 # ==========================================
@@ -285,9 +291,13 @@ def health_check():
 def options_chat():
     return {"message": "OK"}
 
+
+## Action Item: TBD. : Merge tool calling to get answer for "what is current date with below kind of RAG flow also"
+
 @app.post("/chat", response_model=ChatResponse)
 def chat_with_gemini(request: ChatRequest):
     try:
+        print(f"[API] POST /chat — message: {request.message!r}")
         final_reply = ask_with_rag(request.message, chat_history)
         chat_history.append({"role": "user", "content": request.message})
         chat_history.append({"role": "assistant", "content": final_reply})

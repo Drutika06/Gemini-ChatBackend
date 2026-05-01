@@ -1,4 +1,5 @@
 # Environment variables and secrets
+.cloudrun-env.yaml
 .env
 .env.local
 .env.*.local
