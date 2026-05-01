@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from pinecone import Pinecone
 
 # ==========================================
 # TOOL 1: Date and Time
@@ -97,6 +98,140 @@ def initialize_chat():
         print(f"Failed to initialize Gemini: {e}")
         sys.exit(1)
 
+
+def init_pinecone_index():
+    """Connect to an existing Pinecone index created by setup_pinecone.py."""
+    pinecone_api_key = os.getenv("PINECONE_API_KEY")
+    index_name = os.getenv("PINECONE_INDEX_NAME", "mbsr-rag-index")
+
+    if not pinecone_api_key:
+        print("CRITICAL ERROR: PINECONE_API_KEY is missing.")
+        sys.exit(1)
+
+    try:
+        pc = Pinecone(api_key=pinecone_api_key)
+        existing = [idx.name for idx in pc.list_indexes()]
+        if index_name not in existing:
+            print(f"CRITICAL ERROR: Pinecone index '{index_name}' not found.")
+            print("Run: python3 setup_pinecone.py --create")
+            sys.exit(1)
+        return pc.Index(index_name)
+    except Exception as e:
+        print(f"Failed to initialize Pinecone: {e}")
+        sys.exit(1)
+
+
+def estimate_query_complexity(query: str) -> int:
+    """Choose adaptive top_k for retrieval based on query complexity."""
+    word_count = len(query.split())
+    question_count = query.count("?")
+    complexity = word_count + (question_count * 2)
+
+    if complexity < 4:
+        return 2
+    if complexity < 10:
+        return 4
+    return 5
+
+
+def retrieve_from_pinecone(query: str, top_k: int | None = None) -> list[dict]:
+    """Retrieve relevant chunks from Pinecone using integrated query embedding."""
+    namespace = os.getenv("PINECONE_NAMESPACE", "mbsr")
+    if top_k is None:
+        top_k = estimate_query_complexity(query)
+
+    results = pinecone_index.search(
+        namespace=namespace,
+        query={"inputs": {"text": query}, "top_k": top_k},
+    )
+
+    hits = []
+    for match in results.result.hits:
+        fields = match.fields
+        hits.append(
+            {
+                "score": match._score,
+                "chunk_text": fields.get("chunk_text", ""),
+                "source": fields.get("source", "unknown"),
+                "page": fields.get("page", "?"),
+            }
+        )
+    return hits
+
+
+def rewrite_query(user_query: str, history: list[dict]) -> str:
+    """Rewrite follow-up queries into standalone form for better retrieval."""
+    if not history:
+        return user_query
+
+    history_str = "\n".join(
+        f"{'User' if turn['role'] == 'user' else 'AI'}: {turn['content']}"
+        for turn in history[-6:]
+    )
+
+    prompt = f"""Given the conversation history and the latest user query,
+rewrite the query to be standalone and specific. Replace pronouns and references
+with their actual subjects. If the query is already clear, return it unchanged.
+
+CONVERSATION HISTORY:
+{history_str}
+
+LATEST QUERY: {user_query}
+
+REWRITTEN QUERY (just the query, nothing else):"""
+
+    response = rag_model.generate_content(prompt)
+    if response.text:
+        return response.text.strip().strip('"')
+    return user_query
+
+
+def ask_with_rag(question: str, history: list[dict]) -> str:
+    """RAG flow: rewrite query, retrieve from Pinecone, then answer with Gemini."""
+    print(f"[RAG] Incoming question: {question!r}")
+    rewritten = rewrite_query(question, history)
+    if rewritten != question:
+        print(f"[RAG] Query rewritten to: {rewritten!r}")
+    hits = retrieve_from_pinecone(rewritten)
+    print(f"[RAG] Pinecone returned {len(hits)} chunk(s)")
+
+    if not hits:
+        print("[RAG] No hits found — skipping generation")
+        return "I could not find relevant context in the Pinecone knowledge base for that question."
+
+    context_str = "\n\n".join(
+        f"[Score: {hit['score']:.3f} | {hit['source']} p.{hit['page']}]\n{hit['chunk_text']}"
+        for hit in hits
+    )
+
+    history_str = ""
+    if history:
+        recent = history[-6:]
+        history_str = "RECENT CONVERSATION:\n" + "\n".join(
+            f"{'User' if turn['role'] == 'user' else 'AI'}: {turn['content']}"
+            for turn in recent
+        ) + "\n\n"
+
+    prompt = f"""You are an MBSR (Mindfulness-Based Stress Reduction) expert
+answering questions about the MBSR handbook and mindfulness practice.
+
+IMPORTANT GUIDELINES:
+1. Ground your answer in the retrieved context.
+2. Cover both practical structure and deeper mindfulness meaning when available.
+3. Be complete but concise.
+4. If context is missing, clearly state uncertainty and do not hallucinate.
+
+{history_str}RETRIEVED CONTEXT:
+{context_str}
+
+CURRENT QUESTION: {question}
+
+ANSWER:"""
+
+    response = rag_model.generate_content(prompt)
+    print(f"[RAG] Response generated ({len(response.text or '')} chars)")
+    return response.text or "I could not generate an answer right now. Please try again."
+
 # ==========================================
 # FASTAPI APPLICATION SETUP
 # ==========================================
@@ -123,8 +258,11 @@ app.add_middleware(
 
 
 
-# 3. Initialize the AI brain 
+# 3. Initialize AI + Pinecone clients
 chat_session = initialize_chat()
+rag_model = genai.GenerativeModel(model_name='gemini-3.1-flash-lite-preview')
+pinecone_index = init_pinecone_index()
+chat_history: list[dict] = []
 
 # 4. Define the Data Models
 class ChatRequest(BaseModel):
@@ -153,20 +291,16 @@ def health_check():
 def options_chat():
     return {"message": "OK"}
 
+
+## Action Item: TBD. : Merge tool calling to get answer for "what is current date with below kind of RAG flow also"
+
 @app.post("/chat", response_model=ChatResponse)
 def chat_with_gemini(request: ChatRequest):
     try:
-        response = chat_session.send_message(request.message)
-        
-        if response.parts:
-            text_responses = [part.text for part in response.parts if hasattr(part, 'text') and part.text]
-            if text_responses:
-                final_reply = " ".join(text_responses)
-            else:
-                final_reply = "[Tool executed successfully, but no summary was generated.]"
-        else:
-            final_reply = "[Empty response received.]"
-            
+        print(f"[API] POST /chat — message: {request.message!r}")
+        final_reply = ask_with_rag(request.message, chat_history)
+        chat_history.append({"role": "user", "content": request.message})
+        chat_history.append({"role": "assistant", "content": final_reply})
         return ChatResponse(reply=final_reply)
 
     except Exception as e:

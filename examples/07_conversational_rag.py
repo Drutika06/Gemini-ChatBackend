@@ -48,7 +48,7 @@ CHUNKS = [
 
 # ── Build embedding index ──
 def get_embedding(text: str, task: str = "retrieval_document") -> np.ndarray:
-    result = genai.embed_content(model="models/text-embedding-004", content=text, task_type=task)
+    result = genai.embed_content(model="models/gemini-embedding-2", content=text, task_type=task)
     return np.array(result['embedding'])
 
 print("Building embedding index...")
